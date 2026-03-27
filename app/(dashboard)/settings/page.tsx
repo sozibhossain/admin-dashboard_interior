@@ -23,7 +23,17 @@ function resolveErrorMessage(error: unknown, fallback: string) {
 }
 
 // --- Sub-component: Password Input with Toggle ---
-function PasswordInput({ name, id, required }: { name: string; id: string; required?: boolean }) {
+function PasswordInput({
+  name,
+  id,
+  required,
+  placeholder,
+}: {
+  name: string;
+  id: string;
+  required?: boolean;
+  placeholder?: string;
+}) {
   const [show, setShow] = useState(false);
   return (
     <div className="relative">
@@ -32,7 +42,7 @@ function PasswordInput({ name, id, required }: { name: string; id: string; requi
         name={name}
         type={show ? "text" : "password"}
         className="pr-10"
-        placeholder="********"
+        placeholder={placeholder}
         required={required}
       />
       <button
@@ -109,6 +119,12 @@ export default function SettingsPage() {
   async function onProfileSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const adminChangeEmail = String(formData.get("adminChangeEmail") || "").trim();
+    const profileEmail = String(formData.get("email") || "").trim();
+    const nextEmail = (adminChangeEmail || profileEmail).toLowerCase();
+    if (nextEmail) {
+      formData.set("email", nextEmail);
+    }
     if (avatarFile) formData.set("avatar", avatarFile);
     formData.set("removeAvatar", removeAvatar ? "true" : "false");
     profileMutation.mutate(formData);
@@ -178,14 +194,6 @@ export default function SettingsPage() {
               </button>
             )}
             
-            <input
-              ref={avatarInputRef}
-              id="avatar"
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
           </div>
 
           {/* Fields Section */}
@@ -206,6 +214,10 @@ export default function SettingsPage() {
                 <Input id="name" name="name" defaultValue={data?.name} />
               </div>
               <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" name="email" type="email" defaultValue={data?.email ?? ""} />
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="phone">Phone Number</Label>
                 <Input id="phone" name="phone" defaultValue={data?.phone ?? ""} />
               </div>
@@ -221,15 +233,30 @@ export default function SettingsPage() {
           <div className="grid gap-6 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="currentPassword">Current Password</Label>
-              <PasswordInput id="currentPassword" name="currentPassword" required />
+              <PasswordInput
+                id="currentPassword"
+                name="currentPassword"
+                placeholder="Current Password"
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="newPassword">New Password</Label>
-              <PasswordInput id="newPassword" name="newPassword" required />
+              <PasswordInput
+                id="newPassword"
+                name="newPassword"
+                placeholder="New Password"
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <PasswordInput id="confirmPassword" name="confirmPassword" required />
+              <PasswordInput
+                id="confirmPassword"
+                name="confirmPassword"
+                placeholder="Confirm Password"
+                required
+              />
             </div>
           </div>
 
