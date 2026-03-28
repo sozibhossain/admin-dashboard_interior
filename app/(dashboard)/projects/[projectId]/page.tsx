@@ -9,6 +9,7 @@ import {
   addProjectProgress,
   addUpdateComment,
   createTask,
+  deleteProjectUpdate,
   getChatMessages,
   getDocuments,
   getProjectChat,
@@ -64,6 +65,7 @@ export default function ProjectDetailsPage() {
   const [taskModal, setTaskModal] = useState(false);
   const [docModal, setDocModal] = useState(false);
   const [selectedUpdateId, setSelectedUpdateId] = useState<string | null>(null);
+  const [deletingUpdate, setDeletingUpdate] = useState<UpdateItem | null>(null);
   const [updateCommentText, setUpdateCommentText] = useState("");
   const [chatText, setChatText] = useState("");
   const [progressValue, setProgressValue] = useState("");
@@ -174,6 +176,22 @@ export default function ProjectDetailsPage() {
         queryKey: ["update-comments", variables.updateId],
       });
       setUpdateCommentText("");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deleteUpdateMutation = useMutation({
+    mutationFn: deleteProjectUpdate,
+    onSuccess: (_, deletedUpdateId) => {
+      toast.success("Project update deleted");
+      if (activeUpdateId === deletedUpdateId) {
+        setSelectedUpdateId(null);
+      }
+      setDeletingUpdate(null);
+      queryClient.invalidateQueries({ queryKey: ["updates", projectId] });
+      queryClient.invalidateQueries({
+        queryKey: ["update-comments", deletedUpdateId],
+      });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -428,6 +446,7 @@ export default function ProjectDetailsPage() {
           onUpdateCommentTextChange={setUpdateCommentText}
           onSelectUpdate={setSelectedUpdateId}
           onLike={(updateId) => likeMutation.mutate(updateId)}
+          onDeleteUpdate={setDeletingUpdate}
           onSendComment={handleSendUpdateComment}
         />
       ) : null}
@@ -567,6 +586,47 @@ export default function ProjectDetailsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deletingUpdate)}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !deleteUpdateMutation.isPending) {
+            setDeletingUpdate(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md border-[#8a6500]/60 bg-[linear-gradient(180deg,_#E6E1DB_0%,_#847C69_98.36%)]">
+          <DialogHeader>
+            <DialogTitle className="text-[#8a6500]">Delete Project Update</DialogTitle>
+            <DialogDescription className="text-[#4f4638]">
+              Are you sure you want to delete this project update?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#8a6500] bg-transparent text-[#8a6500] hover:bg-[#8a6500]/10"
+              onClick={() => setDeletingUpdate(null)}
+              disabled={deleteUpdateMutation.isPending}
+            >
+              No
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#8a6500] text-white hover:bg-[#735500]"
+              onClick={() => {
+                if (deletingUpdate?._id) {
+                  deleteUpdateMutation.mutate(deletingUpdate._id);
+                }
+              }}
+              disabled={deleteUpdateMutation.isPending}
+            >
+              {deleteUpdateMutation.isPending ? "Deleting..." : "Yes"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -1,8 +1,15 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ChevronLeft, Eye, EyeOff, Plus, Upload, X } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createProject, getManagers } from "@/lib/api";
@@ -26,12 +33,31 @@ type ProjectImageItem = {
   preview: string;
 };
 
+type ClientForm = {
+  id: string;
+  clientName: string;
+  clientEmail: string;
+  clientPassword: string;
+  confirmPassword: string;
+  showPassword: boolean;
+  showConfirmPassword: boolean;
+};
+
+const createEmptyClient = (): ClientForm => ({
+  id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  clientName: "",
+  clientEmail: "",
+  clientPassword: "",
+  confirmPassword: "",
+  showPassword: false,
+  showConfirmPassword: false,
+});
+
 export default function AddProjectPage() {
   const router = useRouter();
-  const [showClientPassword, setShowClientPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const projectImagesRef = useRef<ProjectImageItem[]>([]);
   const [projectImages, setProjectImages] = useState<ProjectImageItem[]>([]);
+  const [clients, setClients] = useState<ClientForm[]>(() => [createEmptyClient()]);
   const [phases, setPhases] = useState<Phase[]>([
     { phaseName: "Deposit", amount: "37000", paymentDate: "" },
   ]);
@@ -91,32 +117,55 @@ export default function AddProjectPage() {
     });
   };
 
+  const updateClientField = (
+    clientId: string,
+    field: "clientName" | "clientEmail" | "clientPassword" | "confirmPassword",
+    value: string,
+  ) => {
+    setClients((prev) =>
+      prev.map((client) =>
+        client.id === clientId ? { ...client, [field]: value } : client,
+      ),
+    );
+  };
+
+  const toggleClientVisibility = (
+    clientId: string,
+    field: "showPassword" | "showConfirmPassword",
+  ) => {
+    setClients((prev) =>
+      prev.map((client) =>
+        client.id === clientId ? { ...client, [field]: !client[field] } : client,
+      ),
+    );
+  };
+
+  const addClient = () => {
+    setClients((prev) => [...prev, createEmptyClient()]);
+  };
+
+  const removeClient = (clientId: string) => {
+    setClients((prev) => prev.filter((client) => client.id !== clientId));
+  };
+
   async function onSubmit(formData: FormData) {
     if (createProjectMutation.isPending) {
       return;
     }
 
-    const clientName = String(formData.get("clientName") || "").trim();
     const projectName = String(formData.get("projectName") || "").trim();
     const category = DASHBOARD_CATEGORY;
     const startDate = String(formData.get("startDate") || "").trim();
     const endDate = String(formData.get("endDate") || "").trim();
     const address = String(formData.get("address") || "").trim();
     const siteManagerId = String(formData.get("siteManagerId") || "").trim();
-    const clientEmail = String(formData.get("clientEmail") || "").trim();
-    const clientPassword = String(formData.get("clientPassword") || "");
-    const confirmPassword = String(formData.get("confirmPassword") || "");
 
     const missingFields = [
-      !clientName ? "Client Name" : null,
       !projectName ? "Projects Name" : null,
       !startDate ? "Projects Start Date" : null,
       !endDate ? "Projects End Date" : null,
       !address ? "Address" : null,
       !siteManagerId ? "Site Manager" : null,
-      !clientEmail ? "Enter Email" : null,
-      !clientPassword ? "Password" : null,
-      !confirmPassword ? "Confirm Password" : null,
     ].filter(Boolean);
 
     if (missingFields.length > 0) {
@@ -124,8 +173,42 @@ export default function AddProjectPage() {
       return;
     }
 
-    if (clientPassword !== confirmPassword) {
-      toast.error("Password and confirm password must match");
+    const normalizedClients = clients.map((client) => ({
+      clientName: client.clientName.trim(),
+      clientEmail: client.clientEmail.trim(),
+      clientPassword: client.clientPassword,
+      confirmPassword: client.confirmPassword,
+    }));
+
+    const incompleteClientIndex = normalizedClients.findIndex(
+      (client) =>
+        !client.clientName ||
+        !client.clientEmail ||
+        !client.clientPassword ||
+        !client.confirmPassword,
+    );
+
+    if (incompleteClientIndex !== -1) {
+      toast.error(`Complete all fields in Client ${incompleteClientIndex + 1}`);
+      return;
+    }
+
+    const invalidPasswordClientIndex = normalizedClients.findIndex(
+      (client) => client.clientPassword !== client.confirmPassword,
+    );
+
+    if (invalidPasswordClientIndex !== -1) {
+      toast.error(
+        `Password and confirm password must match in Client ${invalidPasswordClientIndex + 1}`,
+      );
+      return;
+    }
+
+    const normalizedClientEmails = normalizedClients.map((client) =>
+      client.clientEmail.toLowerCase(),
+    );
+    if (new Set(normalizedClientEmails).size !== normalizedClientEmails.length) {
+      toast.error("Client emails must be unique");
       return;
     }
 
@@ -167,10 +250,18 @@ export default function AddProjectPage() {
       return;
     }
 
+    const primaryClient = normalizedClients[0];
     const payload = new FormData();
-    payload.set("clientName", clientName);
-    payload.set("clientEmail", clientEmail);
-    payload.set("clientPassword", clientPassword);
+    payload.set("clientName", primaryClient.clientName);
+    payload.set("clientEmail", primaryClient.clientEmail);
+    payload.set("clientPassword", primaryClient.clientPassword);
+    payload.set("clientAccounts", JSON.stringify(
+      normalizedClients.map((client) => ({
+        name: client.clientName,
+        email: client.clientEmail,
+        password: client.clientPassword,
+      })),
+    ));
     payload.set("projectName", projectName);
     payload.set("category", category);
     payload.set("phases", JSON.stringify(normalizedPhases));
@@ -245,9 +336,132 @@ export default function AddProjectPage() {
             )}
           </div>
         </div>
-        <div>
-          <Label>Client Name</Label>
-          <Input name="clientName" placeholder="Enter Client name" required />
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label>Client Information</Label>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md border border-[#8a6500]/45 bg-[#f8f3e8] px-3 py-2 text-sm font-medium text-[#6a4f08] transition-colors hover:bg-[#ece0cb]"
+              onClick={addClient}
+            >
+              <Plus className="h-4 w-4" />
+              Add Client
+            </button>
+          </div>
+
+          {clients.map((client, index) => (
+            <div
+              key={client.id}
+              className="space-y-4 rounded-lg border border-[#8a6500]/30 bg-[#f4ece0]/45 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-body-16 font-medium text-[#4d3b12]">
+                  Client {index + 1}
+                </p>
+                {clients.length > 1 ? (
+                  <button
+                    type="button"
+                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#8a6500]/35 text-[#7a5c0a] transition-colors hover:bg-[#8a6500]/10"
+                    onClick={() => removeClient(client.id)}
+                    aria-label={`Remove client ${index + 1}`}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+
+              <div>
+                <Label>Client Name</Label>
+                <Input
+                  value={client.clientName}
+                  onChange={(event) =>
+                    updateClientField(client.id, "clientName", event.target.value)
+                  }
+                  placeholder="Enter Client name"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label>Enter Email</Label>
+                <Input
+                  type="email"
+                  value={client.clientEmail}
+                  onChange={(event) =>
+                    updateClientField(client.id, "clientEmail", event.target.value)
+                  }
+                  placeholder="Enter Email"
+                  required
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label>Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={client.showPassword ? "text" : "password"}
+                      value={client.clientPassword}
+                      onChange={(event) =>
+                        updateClientField(client.id, "clientPassword", event.target.value)
+                      }
+                      placeholder="********"
+                      className="pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-3 text-[#7b6d4f]"
+                      onClick={() => toggleClientVisibility(client.id, "showPassword")}
+                      aria-label={
+                        client.showPassword ? "Hide password" : "Show password"
+                      }
+                    >
+                      {client.showPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <Label>Confirm Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={client.showConfirmPassword ? "text" : "password"}
+                      value={client.confirmPassword}
+                      onChange={(event) =>
+                        updateClientField(client.id, "confirmPassword", event.target.value)
+                      }
+                      placeholder="********"
+                      className="pr-10"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-3 text-[#7b6d4f]"
+                      onClick={() =>
+                        toggleClientVisibility(client.id, "showConfirmPassword")
+                      }
+                      aria-label={
+                        client.showConfirmPassword
+                          ? "Hide confirm password"
+                          : "Show confirm password"
+                      }
+                    >
+                      {client.showConfirmPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         <div>
@@ -348,54 +562,6 @@ export default function AddProjectPage() {
               </option>
             ))}
           </Select>
-        </div>
-
-        <div>
-          <Label>Enter Email</Label>
-          <Input type="email" name="clientEmail" placeholder="Enter Email" required />
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div>
-            <Label>Password</Label>
-            <div className="relative">
-              <Input
-                type={showClientPassword ? "text" : "password"}
-                name="clientPassword"
-                placeholder="********"
-                className="pr-10"
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-3 text-[#7b6d4f]"
-                onClick={() => setShowClientPassword((prev) => !prev)}
-                aria-label={showClientPassword ? "Hide password" : "Show password"}
-              >
-                {showClientPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
-          <div>
-            <Label>Confirm Password</Label>
-            <div className="relative">
-              <Input
-                type={showConfirmPassword ? "text" : "password"}
-                name="confirmPassword"
-                placeholder="********"
-                className="pr-10"
-                required
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-3 text-[#7b6d4f]"
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
-                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-              >
-                {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="grid gap-4 pt-2 md:grid-cols-2">
